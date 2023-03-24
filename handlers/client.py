@@ -5,8 +5,9 @@ from aiogram.dispatcher import FSMContext
 from FSMState.FSMState import States
 from API.kinopoisk_api import get_movie, get_random_movie
 from random import randint
+from config import DB_NAME, USER, PASSWORD, HOST
+from BaseDate.my_db import create_connection_mysql_db, insert_info
 import json
-
 
 type_base = {
     'movie': 'Фильмы',
@@ -46,9 +47,9 @@ async def search_random(call: types.CallbackQuery, state: FSMContext):
                              })
     await call.message.answer(f'Твой выбор {type_base[call.data]}, отлично')
     data = await state.get_data()
+    str_info_request = f'{type_base[call.data]}|rating.imdb {data["rating.imdb"]}'
     result_search_random = await get_random_movie(data)
     result = json.loads(result_search_random.text)
-    counter = 0
     my_result = []
     for movie in result['docs']:
         if movie['name'] is not None:
@@ -60,6 +61,7 @@ async def search_random(call: types.CallbackQuery, state: FSMContext):
     else:
         start_num = 0
         step_num = len(my_result)
+    str_info_response = ''
     for i_movie in my_result[start_num:start_num + step_num]:
         name = i_movie['name']
         length = i_movie.get("movieLength")
@@ -67,19 +69,19 @@ async def search_random(call: types.CallbackQuery, state: FSMContext):
         date = i_movie.get("year")
         description = i_movie.get("shortDescription")
         if length is not None:
-            length_str = f'Продолжительность {length} минут\n'
+            length_str = f'Продолжительность {length} минут'
         else:
             length_str = ''
         if rating is not None:
-            rating_str = f'Рейтинг IMDb - {rating}\n'
+            rating_str = f'Рейтинг IMDb - {rating}'
         else:
             rating_str = ''
         if date is not None:
-            date_str = f'Дата релиза - {date}\n'
+            date_str = f'Дата релиза - {date}'
         else:
             date_str = ''
         if description is not None:
-            description_str = f'Краткое описание:\n{description}\n'
+            description_str = f'Краткое описание: {description}'
         else:
             description_str = ''
         photo = ''
@@ -87,12 +89,22 @@ async def search_random(call: types.CallbackQuery, state: FSMContext):
             photo = i_movie["poster"]["url"]
         await call.message.answer(
             f'Название - {name}\n'
-            f'{length_str}'
-            f'{rating_str}'
-            f'{date_str}'
-            f'{description_str}'
+            f'{length_str}\n'
+            f'{rating_str}\n'
+            f'{date_str}\n'
+            f'{description_str}\n'
             f'{photo}'
         )
+        str_info_response = str_info_response + \
+                            f'{name}|{length_str}|{rating_str}|{date_str}|{description_str}|{photo}\n'
+    with create_connection_mysql_db(HOST, USER, PASSWORD, DB_NAME) as connection:
+        insert_info(connection=connection,
+                    telegram_id=call.from_user.id,
+                    first_name=call.from_user.first_name,
+                    last_name=call.from_user.last_name,
+                    request=str_info_request,
+                    response=str_info_response
+                    )
 
 
 @dp.callback_query_handler(state=States.start)
@@ -136,9 +148,21 @@ async def options(call: types.CallbackQuery, state: FSMContext):
                     data['rating.imdb'] = rating_imdb_str
                     await state.update_data(data)
                     data = await state.get_data()
+            str_type = type_base[data.get('type')]
+            list_genres = data.get('genres.name')
+            str_genres = ''
+            if list_genres is not None:
+                for i_genres in list_genres:
+                    str_genres = str_genres + i_genres + ' '
+            else:
+                str_genres = None
+            str_rating = data.get('rating.imdb')
+            str_year = data.get('year')
+            str_info_request = f' Тип: {str_type}|Жанры: {str_genres}|Рейтинг imdb {str_rating}|Релиз: {str_year}'
             result_search = await get_movie(data)
             result = json.loads(result_search.text)
             count = 0
+            str_info_response = ''
             for i_movie in result['docs']:
                 if count != 10:
                     if i_movie['name'] is not None:
@@ -148,19 +172,19 @@ async def options(call: types.CallbackQuery, state: FSMContext):
                         date = i_movie.get("year")
                         description = i_movie.get("shortDescription")
                         if length is not None:
-                            length_str = f'Продолжительность {length} минут\n'
+                            length_str = f'Продолжительность {length} минут'
                         else:
                             length_str = ''
                         if rating is not None:
-                            rating_str = f'Рейтинг IMDb - {rating}\n'
+                            rating_str = f'Рейтинг IMDb - {rating}'
                         else:
                             rating_str = ''
                         if date is not None:
-                            date_str = f'Дата релиза - {date}\n'
+                            date_str = f'Дата релиза - {date}'
                         else:
                             date_str = ''
                         if description is not None:
-                            description_str = f'Краткое описание:\n{description}\n'
+                            description_str = f'Краткое описание: {description}'
                         else:
                             description_str = ''
                         photo = ''
@@ -168,16 +192,26 @@ async def options(call: types.CallbackQuery, state: FSMContext):
                             photo = i_movie["poster"]["url"]
                         await call.message.answer(
                             f'Название - {name}\n'
-                            f'{length_str}'
-                            f'{rating_str}'
-                            f'{date_str}'
-                            f'{description_str}'
+                            f'{length_str}\n'
+                            f'{rating_str}\n'
+                            f'{date_str}\n'
+                            f'{description_str}\n'
                             f'{photo}'
                         )
                         count += 1
+                        str_info_response = str_info_response + \
+                                            f'{name}|{length_str}|{rating_str}|{date_str}|{description_str}|{photo}\n'
                 else:
                     break
-            # await States.search.set()
+            with create_connection_mysql_db(HOST, USER, PASSWORD, DB_NAME) as connection:
+                insert_info(connection=connection,
+                            telegram_id=call.from_user.id,
+                            first_name=call.from_user.first_name,
+                            last_name=call.from_user.last_name,
+                            request=str_info_request,
+                            response=str_info_response
+                            )
+            await States.search.set()
     # elif call.data == 'test':
     #     data = await state.get_data()
     #     await call.message.answer(f'{data}')
@@ -264,13 +298,13 @@ async def search_year(call: types.CallbackQuery, state: FSMContext):
     # elif call.data == 'test':
     #     await call.message.answer(f'{data}')
     else:
-        if data.get('year') is None:
-            await state.update_data({'year': []})
-            data = await state.get_data()
-        if len(data['year']) == 0:
-            data['year'].append(call.data)
-        else:
-            del data['year'][0]
-            data['year'].append(call.data)
+        # if data.get('year') is None:
+        #     await state.update_data({'year': []})
+        #     data = await state.get_data()
+        # if len(data['year']) == 0:
+        #     data['year'].append(call.data)
+        # else:
+        #     del data['year'][0]
+        #     data['year'].append(call.data)
+        data['year'] = call.data
         await state.update_data(data)
-

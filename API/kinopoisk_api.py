@@ -20,3 +20,4 @@ async def get_random_movie(params: dict) -> requests.models.Response:
                             headers=headers,
                             params=params)
     return response
+
